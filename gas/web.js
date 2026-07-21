@@ -218,7 +218,7 @@ var VALID_ANSWER = { works: 1, ifneeded: 1, cant: 1 };
 function parseSlotVotesJson(snapshot, invitee, votesObj) {
   votesObj = votesObj || {};
   var votes = [];
-  liveSlots(snapshot).forEach(function (s) {
+  Sched.engine.liveSlots(snapshot).forEach(function (s) {
     var ans = votesObj[s.slotId];
     if (!VALID_ANSWER[ans]) return;
     votes.push({ slotId: s.slotId, answer: ans,
@@ -230,7 +230,7 @@ function parseSlotVotesJson(snapshot, invitee, votesObj) {
 function parseOrganizerVotesJson(snapshot, votesObj) {
   votesObj = votesObj || {};
   var votes = [];
-  liveSlots(snapshot).filter(function (s) { return s.slateVersion === 2; }).forEach(function (s) {
+  Sched.engine.liveSlots(snapshot).filter(function (s) { return s.slateVersion === 2; }).forEach(function (s) {
     var ans = votesObj[s.slotId];
     if (!VALID_ANSWER[ans]) ans = 'works'; // prefilled to Works
     votes.push({ slotId: s.slotId, answer: ans, provenance: 'explicit_slate' });
@@ -265,7 +265,7 @@ function parseBenchJson(snapshot, slots) {
 /** True iff the proposer has recorded Can't on every live slate-1 slot. */
 function proposerAllCant(snapshot, inviteeId) {
   var latest = safe(function () { return Sched.votes.latest(snapshot); }, new Map());
-  var slate = liveSlots(snapshot).filter(function (s) {
+  var slate = Sched.engine.liveSlots(snapshot).filter(function (s) {
     return s.kind !== 'bench' && s.slateVersion === 1;
   });
   return slate.length > 0 && slate.every(function (s) {
@@ -418,6 +418,11 @@ function handleCreatePoll(body) {
 
   Store.insertPoll(pollRow, invitees, slots);
   Store.setTokens(pollId, tokens); // raw tokens live in Script Properties, not the Sheet
+  // The slate is the organizer's own proposal: per DESIGN.md provenance rules it counts
+  // as their Works on every proposed slot (the organizer has no round-1 voting page).
+  Store.appendVotes(pollId, 'inv_org', slots.map(function (s) {
+    return { slotId: s.slotId, answer: 'works', provenance: 'proposal' };
+  }));
   Store.appendAudit(pollId, 'created', { invitees: invitees.length, slots: slots.length });
   advancePoll(pollId, { kind: 'tick' }); // SETUP -> ROUND1, enqueues SEND_INVITE
 
@@ -571,19 +576,12 @@ function voteDeadlinePassed(snapshot, now) {
 
 // ---- shell-wide utilities (previously in pages.js) --------------------------
 
-/** Live, non-excluded slots. */
-function liveSlots(snapshot) {
-  return snapshot.slots.filter(function (s) {
-    return s.kind !== 'dropped' && s.kind !== 'rejected';
-  });
-}
-
 /** Live calendar recheck for display only — map slotId -> true when now busy. */
 function renderBusyMap(snapshot) {
   var map = {};
   var VOTING = { ROUND1: 1, ROUND2: 1, PIVOT_PENDING: 1, HOLD: 1 };
   if (!VOTING[snapshot.poll.state]) return map;
-  liveSlots(snapshot).forEach(function (s) {
+  Sched.engine.liveSlots(snapshot).forEach(function (s) {
     if (!safe(function () { return Cal.isSlotFree(snapshot.poll, s); }, true)) map[s.slotId] = true;
   });
   return map;

@@ -522,7 +522,7 @@ function applyCalendarRechecks(pollId) {
   var organizer = snapshot.invitees.filter(function (i) { return i.organizer; })[0];
   if (!organizer) return;
   var latest = safe(function () { return Sched.votes.latest(snapshot); }, new Map());
-  liveSlots(snapshot).forEach(function (s) {
+  Sched.engine.liveSlots(snapshot).forEach(function (s) {
     var existing = latest.get ? latest.get(organizer.inviteeId + '|' + s.slotId) : null;
     if (existing && existing.answer === 'cant') return; // already blocked
     if (!safe(function () { return Cal.isSlotFree(snapshot.poll, s); }, true)) {

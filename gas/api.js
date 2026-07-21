@@ -22,10 +22,10 @@ var Api = {
     var full = poll.visibility === 'full';
     var latest = safe(function () { return Sched.votes.latest(snapshot); }, new Map());
 
-    var slateSlots = liveSlots(snapshot).filter(function (s) {
+    var slateSlots = Sched.engine.liveSlots(snapshot).filter(function (s) {
       return s.kind !== 'bench' && s.slateVersion === poll.slateVersion;
     });
-    var benchSlots = liveSlots(snapshot).filter(function (s) { return s.kind === 'bench'; });
+    var benchSlots = Sched.engine.liveSlots(snapshot).filter(function (s) { return s.kind === 'bench'; });
 
     var shape = function (s) {
       return buildSlot(snapshot, s, invitee, isOrg, full, latest, busy, now);
@@ -133,7 +133,7 @@ function buildSlot(snapshot, slot, invitee, isOrg, full, latest, busy, now) {
 /** The invitee's own recorded answers across every live slot they can see. */
 function answersFor(latest, inviteeId, snapshot) {
   var out = {};
-  liveSlots(snapshot).forEach(function (s) {
+  Sched.engine.liveSlots(snapshot).forEach(function (s) {
     var v = latest.get ? latest.get(Sched.votes.keyOf(inviteeId, s.slotId)) : null;
     if (v) out[s.slotId] = v.answer;
   });
@@ -144,7 +144,7 @@ function answersFor(latest, inviteeId, snapshot) {
 
 function buildOrganizer(snapshot, latest, now) {
   var poll = snapshot.poll;
-  var live = liveSlots(snapshot);
+  var live = Sched.engine.liveSlots(snapshot);
 
   var diagnostics = [];
   live.forEach(function (s) {
@@ -187,7 +187,7 @@ function buildOrganizer(snapshot, latest, now) {
 
 function buildPivot(snapshot, now) {
   var poll = snapshot.poll;
-  var slate2 = liveSlots(snapshot).filter(function (s) { return s.slateVersion === 2; });
+  var slate2 = Sched.engine.liveSlots(snapshot).filter(function (s) { return s.slateVersion === 2; });
   return {
     proposed: slate2.map(function (s) {
       var st = safe(function () { return Sched.engine.slotStatus(snapshot, s.slotId, now); },
@@ -205,9 +205,9 @@ function buildHold(snapshot, latest) {
   var poll = snapshot.poll;
   return {
     slotId: poll.holdSlotId,
-    confirmed: namesWithAnswer(snapshot, latest, poll.holdSlotId, 'works')
-      .concat(namesWithAnswer(snapshot, latest, poll.holdSlotId, 'ifneeded')),
-    mayClash: namesWithAnswer(snapshot, latest, poll.holdSlotId, 'cant'),
+    confirmed: namesByAnswer(snapshot, latest, poll.holdSlotId, 'works')
+      .concat(namesByAnswer(snapshot, latest, poll.holdSlotId, 'ifneeded')),
+    mayClash: namesByAnswer(snapshot, latest, poll.holdSlotId, 'cant'),
     autoBookUtc: poll.holdStartedAtUtc ? poll.holdStartedAtUtc + 24 * 3600000 : null
   };
 }
@@ -217,7 +217,7 @@ function buildEscalate(snapshot) {
   return {
     diagnosis: safe(function () { return Sched.text.page.escalateDiagnosis(snapshot); },
       'No rescue slot reached the success rule.'),
-    levers: liveSlots(snapshot).map(function (s) {
+    levers: Sched.engine.liveSlots(snapshot).map(function (s) {
       return { id: s.slotId, label: safe(function () { return Sched.text.when(s.startUtc, poll.tz); }, '') };
     })
   };
@@ -225,7 +225,7 @@ function buildEscalate(snapshot) {
 
 /** Required people missing a vote on a live current-slate slot — the demote candidates. */
 function appendSilentRequired(snapshot, latest, diagnostics) {
-  var live = liveSlots(snapshot).filter(function (s) {
+  var live = Sched.engine.liveSlots(snapshot).filter(function (s) {
     return s.kind !== 'bench' && s.slateVersion === snapshot.poll.slateVersion;
   });
   snapshot.invitees.forEach(function (inv) {
@@ -259,7 +259,7 @@ function namesForIds(snapshot, ids) {
   });
 }
 
-function namesWithAnswer(snapshot, latest, slotId, answer) {
+function namesByAnswer(snapshot, latest, slotId, answer) {
   return snapshot.invitees.filter(function (inv) {
     var v = latest.get ? latest.get(Sched.votes.keyOf(inv.inviteeId, slotId)) : null;
     return v && v.answer === answer;

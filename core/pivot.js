@@ -4,8 +4,11 @@ var W_WORKS = 3;
 var W_IFNEEDED = 1;
 var PENALTY_PREDICTED_CANT = 4;
 
-function isRequired(inv) { return inv.required && !inv.demoted; }
-function bandOf(hour) { return hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"; }
+// Shared one-liners live in constraints.js/engine.js; every Apps Script file shares ONE
+// global scope, so a same-named top-level function here would silently clobber theirs
+// (see test/globals.test.mjs).
+function pivotIsRequired(inv) { return inv.required && !inv.demoted; }
+function pivotBandOf(hour) { return hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"; }
 
 /** Score a candidate slot and collect people-naming reasoning fragments. */
 function scoreCandidate(snapshot, slot) {
@@ -57,7 +60,7 @@ function vetoLabel(veto) {
 function requiredGatePasses(snapshot, slot) {
   var latest = Sched.votes.latest(snapshot);
   return snapshot.invitees.every(function (inv) {
-    if (!isRequired(inv)) return true;
+    if (!pivotIsRequired(inv)) return true;
     var v = latest.get(Sched.votes.keyOf(inv.inviteeId, slot.slotId));
     if (v && v.answer === "cant") return false;
     if (!v && Sched.constraints.predictedAnswer(snapshot, inv.inviteeId, slot) === "cant") return false;
@@ -134,7 +137,7 @@ function pickDiverse(scored, poll) {
   var picked = [scored[0]];
   var dayKey = function (c) { return Sched.universe.localParts(c.startUtc, poll.tz).dateKey; };
   var bandKey = function (c) {
-    return bandOf(Sched.universe.localParts(c.startUtc, poll.tz).hour);
+    return pivotBandOf(Sched.universe.localParts(c.startUtc, poll.tz).hour);
   };
 
   var differentDay = scored.slice(1).filter(function (c) {
