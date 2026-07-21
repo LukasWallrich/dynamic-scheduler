@@ -101,7 +101,8 @@ const Store = {
       rev: v.rev || (++voteRev), atUtc: Date.now()
     }));
   },
-  appendConstraints(pollId, inviteeId, cs) {
+  replaceConstraints(pollId, inviteeId, cs) {
+    db.polls[pollId].constraints = db.polls[pollId].constraints.filter((c) => c.inviteeId !== inviteeId);
     cs.forEach((c) => db.polls[pollId].constraints.push({ inviteeId, type: c.type, value: c.value, atUtc: Date.now() }));
   },
   appendSlots(pollId, slots) { slots.forEach((s) => db.polls[pollId].slots.push({ ...s })); },
@@ -136,8 +137,11 @@ function applyActionStub(pollId, action) {
   if (!action || action.kind === "tick") return;
   const snap = Store.loadSnapshot(pollId);
   switch (action.kind) {
-    case "votes": Store.appendVotes(pollId, action.inviteeId, action.votes); break;
-    case "constraints": Store.appendConstraints(pollId, action.inviteeId, action.constraints); break;
+    case "votes":
+      Store.appendVotes(pollId, action.inviteeId, action.votes);
+      if (action.constraints) Store.replaceConstraints(pollId, action.inviteeId, action.constraints);
+      break;
+    case "constraints": Store.replaceConstraints(pollId, action.inviteeId, action.constraints); break;
     case "bench": {
       const bench = action.slots.map((s, idx) => ({
         slotId: "bench_" + action.inviteeId + "_" + Date.now() + "_" + idx,
@@ -371,4 +375,49 @@ test("full-visibility invitee sees anonymous support counts on the slate", () =>
   });
   // Counts are still anonymous — no names, no required-status.
   assert.doesNotMatch(JSON.stringify(res.data), /required/i);
+});
+
+test("submitVotes replaces the constraint set atomically; [] clears it", () => {
+  const created = createPoll();
+  const mayaToken = Store.inviteeToken(created.pollId, "inv_0");
+  const slotIds = created.state.slots.map((s) => s.slotId);
+
+  // Save votes + two avoid-rules in ONE call.
+  let res = callApi({ action: "submitVotes", token: mayaToken,
+    votes: { [slotIds[0]]: "works" },
+    constraints: [{ type: "dow", value: 2 }, { type: "range", value: "2030-01-05/2030-01-07" }] });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.you.constraints.length, 2, "rules stored with the same save");
+
+  // A later save with a smaller set REPLACES (old rules must not linger).
+  res = callApi({ action: "submitVotes", token: mayaToken,
+    votes: { [slotIds[0]]: "works" }, constraints: [{ type: "dow", value: 3 }] });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.data.you.constraints, [{ type: "dow", value: 3 }]);
+
+  // Empty set genuinely clears.
+  res = callApi({ action: "submitVotes", token: mayaToken,
+    votes: { [slotIds[0]]: "works" }, constraints: [] });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.data.you.constraints, []);
+});
+
+test("organizer proposal votes are seeded at createPoll", () => {
+  const created = createPoll();
+  const snap = Store.loadSnapshot(created.pollId);
+  const orgVotes = snap.votes.filter((v) => v.inviteeId === "inv_org");
+  assert.equal(orgVotes.length, 3);
+  orgVotes.forEach((v) => { assert.equal(v.answer, "works"); assert.equal(v.provenance, "proposal"); });
+});
+
+test("escalate view exposes executable typed levers", () => {
+  const created = createPoll();
+  Store.updatePoll(created.pollId, { state: "ESCALATE" }, Store.loadSnapshot(created.pollId).poll.rev);
+  const res = callApi({ action: "getState", token: created.dashboardToken });
+  assert.equal(res.ok, true);
+  const levers = res.data.organizer.escalate.levers;
+  const bookLevers = levers.filter((l) => l.id.startsWith("book:"));
+  assert.equal(bookLevers.length, 3, "one book lever per live slate slot");
+  bookLevers.forEach((l) => { assert.ok(l.slotId); assert.match(l.label, /anyway/); });
+  assert.ok(levers.some((l) => l.id === "cancel"));
 });

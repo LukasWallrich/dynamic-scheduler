@@ -64,7 +64,7 @@ horizonEndUtc }` once the organizer sets a horizon.)
 |---|---|---|
 | `createPoll` | `{ setupToken, poll }` (see below) | validates, creates, sends invites → `{ pollId, dashboardToken }` |
 | `submitVotes` | `{ token, votes: {<slotId>: answer}, constraints? }` | records votes (+ optional vetoes) |
-| `saveConstraints` | `{ token, constraints }` | day/week/band vetoes |
+| `saveConstraints` | `{ token, constraints }` | dow/week/range vetoes; REPLACES the invitee's whole set ([] clears) |
 | `proposeBench` | `{ token, slots: [{startUtc,endUtc}] }` | counter-proposals (validated server-side against the offered set) |
 | `organizerLaunch` | `{ token, votes: {<slotId>: answer} }` | records organizer votes on the rescue slate, launches round 2 |
 | `organizerApprove` | `{ token, slotId? }` | approve hold (or book least-bad from escalate) |
@@ -87,7 +87,8 @@ authoritative state in one round-trip.
   minAttendees, maxAbsences, pivotDelayHours,
   round1DeadlineUtc, visibility,
   invitees: [ { name, email, required } ],       // organizer added server-side
-  slotStartsUtc: [ <utc>, ... ],                 // 2-3; picked, not typed
+  slotStartsUtc: [ <utc>, ... ],                 // 2-8; picked, not typed; each must be
+                                                 // in the server-recomputed candidate set
   linkBase }                                     // where the frontend is hosted; the
                                                  // backend appends ?token=<t> (or &token=)
                                                  // to build every invitee/organizer link

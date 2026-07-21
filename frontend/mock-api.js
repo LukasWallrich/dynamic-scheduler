@@ -59,7 +59,7 @@
     return {
       role: "invitee",
       poll: Object.assign({ state: "ROUND1", minAttendees: 4, maxAbsences: 2 }, pollBase),
-      you: { name: "Priya", answersBySlotId: {} },
+      you: { name: "Priya", answersBySlotId: {}, constraints: [] },
       slots: slots,
       bench: bench,
       benchOptions: [
@@ -78,11 +78,11 @@
       you: { name: "Alex Chen", answersBySlotId: {} },
       slots: [
         slot("s1", 0, 14, "slate1", { status: "blocked", support: { works: 2, ifneeded: 1, cant: 2 },
-          reasons: [{ rule: "required_cant", text: "<b>Maya voted Can’t</b> — required, so the slot is blocked. Also hits <b>Jonas’s no-Tuesdays</b> veto." }] }),
+          reasons: [{ rule: "required_cant", text: "Maya voted Can’t — required, so the slot is blocked. Also hits Jonas’s no-Tuesdays veto." }] }),
         slot("s2", 1, 10, "slate1", { status: "alive", support: { works: 3, ifneeded: 1, cant: 1 },
           reasons: [{ rule: "note", text: "Needs one more attending to reach 4." }] }),
         slot("s3", 2, 15, "slate1", { status: "doomed", support: { works: 1, ifneeded: 1, cant: 3 },
-          reasons: [{ rule: "max_absences", text: "<b>3 Can’t</b> already exceeds the 2 absences allowed." }] })
+          reasons: [{ rule: "max_absences", text: "3 Can’t already exceeds the 2 absences allowed." }] })
       ],
       bench: [],
       organizer: {
@@ -103,9 +103,9 @@
       poll: Object.assign({ state: "PIVOT_PENDING", minAttendees: 4, maxAbsences: 2, roundLabel: "Pivot", organizerEmail: "alex.chen@gmail.com" }, pollBase),
       you: { name: "Alex Chen", answersBySlotId: {} },
       slots: [
-        slot("s1", 0, 14, "slate1", { status: "blocked", reasons: [{ text: "<b>Maya voted Can’t</b> — required, blocked." }] }),
-        slot("s2", 1, 10, "slate1", { status: "blocked", reasons: [{ text: "<b>Maya voted Can’t</b> — required, blocked." }] }),
-        slot("s3", 2, 15, "slate1", { status: "blocked", reasons: [{ text: "<b>Alex’s calendar</b> now shows this hour busy." }] })
+        slot("s1", 0, 14, "slate1", { status: "blocked", reasons: [{ text: "Maya voted Can’t — required, blocked." }] }),
+        slot("s2", 1, 10, "slate1", { status: "blocked", reasons: [{ text: "Maya voted Can’t — required, blocked." }] }),
+        slot("s3", 2, 15, "slate1", { status: "blocked", reasons: [{ text: "Alex’s calendar now shows this hour busy." }] })
       ],
       bench: [],
       organizer: {

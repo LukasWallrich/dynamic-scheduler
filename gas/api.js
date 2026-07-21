@@ -39,6 +39,7 @@ var Api = {
         tz: poll.tz,
         durationMins: poll.durationMins,
         visibility: poll.visibility,
+        organizerEmail: poll.organizerEmail,
         deadlineUtc: currentDeadline(poll),
         roundLabel: poll.slateVersion === 2 ? 'Round 2' : 'Round 1',
         // Bounds for the invitee's avoid-rules UI (day toggles + painted absence dates).
@@ -48,7 +49,12 @@ var Api = {
       },
       you: {
         name: invitee.name,
-        answersBySlotId: answersFor(latest, invitee.inviteeId, snapshot)
+        answersBySlotId: answersFor(latest, invitee.inviteeId, snapshot),
+        // Your saved avoid-rules, so the page can seed its editor — saves REPLACE the
+        // whole set, so an unseeded editor would silently wipe earlier rules.
+        constraints: (snapshot.constraints || []).filter(function (c) {
+          return c.inviteeId === invitee.inviteeId;
+        }).map(function (c) { return { type: c.type, value: c.value }; })
       },
       slots: slateSlots.map(shape),
       bench: benchSlots.map(shape)
@@ -159,8 +165,8 @@ function buildOrganizer(snapshot, latest, now) {
     });
   });
 
-  var required = snapshot.invitees.filter(function (i) { return i.required && !i.demoted; });
-  var coverage = required.map(function (i) {
+  // Everyone, not just required people — the dashboard labels this "Who has responded".
+  var coverage = snapshot.invitees.filter(function (i) { return !i.demoted; }).map(function (i) {
     var responded = snapshot.slots.some(function (s) {
       return latest.get && latest.get(Sched.votes.keyOf(i.inviteeId, s.slotId));
     });
@@ -180,9 +186,34 @@ function buildOrganizer(snapshot, latest, now) {
   if (poll.state === 'PIVOT_PENDING') out.pivot = buildPivot(snapshot, now);
   else if (poll.state === 'HOLD') out.hold = buildHold(snapshot, latest);
   else if (poll.state === 'ESCALATE') out.escalate = buildEscalate(snapshot);
-  else if (poll.state === 'REQUIRED_GRACE') appendSilentRequired(snapshot, latest, diagnostics);
+  else if (poll.state === 'REQUIRED_GRACE') {
+    appendSilentRequired(snapshot, latest, diagnostics);
+    // Actionable grace block: the dashboard renders extend / demote controls from this
+    // (the grace email promises those options, so the page must actually offer them).
+    out.grace = {
+      untilUtc: poll.requiredGraceUntilUtc || null,
+      silent: silentRequiredInvitees(snapshot, latest).map(function (i) {
+        return { inviteeId: i.inviteeId, name: i.name };
+      })
+    };
+  } else if (poll.state === 'BOOKING_FAILED') {
+    out.bookingFailed = true; // dashboard shows the retry control
+  }
 
   return out;
+}
+
+/** Required, non-demoted invitees still missing a vote on a live current-slate slot. */
+function silentRequiredInvitees(snapshot, latest) {
+  var live = Sched.engine.liveSlots(snapshot).filter(function (s) {
+    return s.kind !== 'bench' && s.slateVersion === snapshot.poll.slateVersion;
+  });
+  return snapshot.invitees.filter(function (inv) {
+    if (!(inv.required && !inv.demoted)) return false;
+    return live.some(function (s) {
+      return !(latest.get && latest.get(Sched.votes.keyOf(inv.inviteeId, s.slotId)));
+    });
+  });
 }
 
 function buildPivot(snapshot, now) {
@@ -214,12 +245,27 @@ function buildHold(snapshot, latest) {
 
 function buildEscalate(snapshot) {
   var poll = snapshot.poll;
+  var latest = Sched.votes.latest(snapshot);
+  // Typed levers the frontend can actually execute: book a specific slot despite the
+  // failed rule (organizerApprove + slotId, holdForced path), or cancel.
+  var levers = Sched.engine.liveSlots(snapshot)
+    .filter(function (s) { return s.kind !== 'bench' && s.slateVersion === poll.slateVersion; })
+    .map(function (s) {
+      var covers = namesByAnswer(snapshot, latest, s.slotId, 'works')
+        .concat(namesByAnswer(snapshot, latest, s.slotId, 'ifneeded'));
+      var clash = namesByAnswer(snapshot, latest, s.slotId, 'cant');
+      return {
+        id: 'book:' + s.slotId, slotId: s.slotId,
+        label: 'Book ' + safe(function () { return Sched.text.when(s.startUtc, poll.tz); }, '') + ' anyway',
+        detail: 'Covers: ' + (covers.length ? covers.join(', ') : 'nobody yet') +
+          (clash.length ? ' · said Can’t: ' + clash.join(', ') : '')
+      };
+    });
+  levers.push({ id: 'cancel', slotId: null, label: 'Cancel the poll', detail: '' });
   return {
     diagnosis: safe(function () { return Sched.text.page.escalateDiagnosis(snapshot); },
       'No rescue slot reached the success rule.'),
-    levers: Sched.engine.liveSlots(snapshot).map(function (s) {
-      return { id: s.slotId, label: safe(function () { return Sched.text.when(s.startUtc, poll.tz); }, '') };
-    })
+    levers: levers
   };
 }
 

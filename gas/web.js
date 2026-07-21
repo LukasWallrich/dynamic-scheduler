@@ -204,13 +204,11 @@ function freshState(pollId, token) {
 // ---- write parsers (JSON body) ----------------------------------------------
 
 function submitVotes(snapshot, invitee, body) {
-  var votes = parseSlotVotesJson(snapshot, invitee, body.votes);
-  var r = advancePoll(snapshot.poll.pollId, { kind: 'votes', inviteeId: invitee.inviteeId, votes: votes });
-  var constraints = parseConstraintsJson(body.constraints);
-  if (constraints.length) {
-    r = advancePoll(snapshot.poll.pollId, { kind: 'constraints', inviteeId: invitee.inviteeId, constraints: constraints });
-  }
-  return r;
+  // One atomic action: votes + the full replacement constraint set (empty clears).
+  var action = { kind: 'votes', inviteeId: invitee.inviteeId,
+    votes: parseSlotVotesJson(snapshot, invitee, body.votes) };
+  if (body.constraints !== undefined) action.constraints = parseConstraintsJson(body.constraints);
+  return advancePoll(snapshot.poll.pollId, action);
 }
 
 var VALID_ANSWER = { works: 1, ifneeded: 1, cant: 1 };
@@ -379,6 +377,30 @@ function handleCreatePoll(body) {
   };
   var errors = validateSetup(ctx);
   if (errors.length) return jsonErr('bad_request', 'Please fix the highlighted fields.', errors);
+
+  // Authoritative availability check: recompute the allowed candidate starts from the
+  // organizer's live calendar + working hours, so a stale or crafted request cannot
+  // invite people to busy/off-grid times. Dedupe first. If the calendar read fails,
+  // skip the check rather than reject everything (the recheck cron self-heals later).
+  slotStarts = slotStarts.filter(function (s, i) { return slotStarts.indexOf(s) === i; });
+  ctx.slotStarts = slotStarts;
+  var pseudo = { organizerEmail: organizerEmail, tz: tz, durationMins: dur,
+    horizonStartUtc: horizonStartUtc, horizonEndUtc: horizonEndUtc,
+    workingHours: { startHour: Number(wh.startHour), endHour: Number(wh.endHour), days: whDays } };
+  var allowedStarts = safe(function () {
+    return Sched.universe.candidateStarts(pseudo, Cal.freeWindows(pseudo));
+  }, null);
+  if (allowedStarts && allowedStarts.length) {
+    var allowed = {};
+    allowedStarts.forEach(function (s) { allowed[s] = true; });
+    var badSlots = [];
+    slotStarts.forEach(function (s, i) {
+      if (!allowed[s]) badSlots.push('Slot ' + (i + 1) + ' (' +
+        safe(function () { return Sched.text.when(s, tz); }, String(s)) +
+        ') is no longer available — reload availability and pick again.');
+    });
+    if (badSlots.length) return jsonErr('bad_request', 'Please fix the highlighted fields.', badSlots);
+  }
 
   var pollId = 'poll_' + Utilities.getUuid().slice(0, 8);
   var organizerName = String(poll.organizerName || '').trim() ||
@@ -571,7 +593,8 @@ function attachInvitee(snapshot, inviteeRow, token) {
 function voteDeadlinePassed(snapshot, now) {
   var poll = snapshot.poll;
   var dl = poll.slateVersion === 2 ? poll.round2DeadlineUtc : poll.round1DeadlineUtc;
-  return dl && now > dl;
+  return dl && now >= dl; // same boundary as the core (>=), so an exact-deadline
+                          // submission can't be accepted and judged as late
 }
 
 // ---- shell-wide utilities (previously in pages.js) --------------------------

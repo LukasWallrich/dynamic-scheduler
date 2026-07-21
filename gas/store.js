@@ -226,7 +226,17 @@ var Store = {
     });
   },
 
-  appendConstraints: function (pollId, inviteeId, constraints) {
+  /**
+   * Replace one invitee's whole constraint set (avoid-rules). The frontend always
+   * sends the full current set on save, so an empty array genuinely clears rules —
+   * append-only storage made cleared rules haunt pivot scoring forever.
+   */
+  replaceConstraints: function (pollId, inviteeId, constraints) {
+    var sh = this.sheet('constraints');
+    var stale = this._rows('constraints').filter(function (r) {
+      return r.pollId === pollId && r.inviteeId === inviteeId;
+    });
+    for (var i = stale.length - 1; i >= 0; i--) sh.deleteRow(stale[i]._row); // bottom-up
     var now = Date.now();
     constraints.forEach(function (c) {
       Store._append('constraints', {

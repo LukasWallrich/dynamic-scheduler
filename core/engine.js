@@ -373,7 +373,7 @@ function reminderPass(snapshot, nowUtc) {
   var dl = roundDeadline(snapshot);
   if (dl == null) return noop(snapshot);
   var roundStart = poll.slateVersion === 2
-    ? (poll.pivotProposedAtUtc || poll.createdAtUtc)
+    ? (poll.launchApprovedAtUtc || poll.pivotProposedAtUtc || poll.createdAtUtc)
     : poll.createdAtUtc;
   // Guard: a missing/invalid roundStart would make the midpoint ~half of a huge epoch
   // (a 1998 timestamp), firing reminders on the first tick. Never remind without a

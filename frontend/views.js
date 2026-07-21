@@ -452,7 +452,7 @@
         '<span class="kw">and</span> attending ≥ ' + state.minAttendees + '<br>' +
         '<span class="kw">and</span> absences ≤ ' + state.maxAbsences });
       var contractText = "If none of these reach " + state.minAttendees + " people" +
-        (reqNames.length ? " with " + reqNames.join(" and ") + " on board" : "") +
+        (reqNames.length ? " including " + reqNames.join(" and ") : "") +
         ", the tool proposes up to 3 alternatives. Decision by " + dl + ".";
       return el("div", {}, [
         el("p", { class: "section-label" }, "The success rule"),
@@ -560,15 +560,7 @@
         field("Response deadline", el("input", { type: "datetime-local",
           value: state.round1DeadlineUtc ? new Date(state.round1DeadlineUtc + tzOffset(state.round1DeadlineUtc, state.tz)).toISOString().slice(0, 16) : "",
           onchange: function (e) { state.round1DeadlineUtc = e.target.value ? localToUtc(e.target.value, state.tz) : null; refreshContract(); } }),
-          "Interpreted in the meeting timezone (" + U.tzAbbrev(state.tz) + ").", "round1DeadlineUtc"),
-        el("div", { class: "field" }, el("div", { class: "toggle-row" }, [
-          el("span", {}, [el("span", { class: "field-label" }, "Full transparency"),
-            el("span", { class: "hint" }, "Off: invitees see anonymous counts, never names.")]),
-          el("label", { class: "switch" }, [
-            el("input", { type: "checkbox", "aria-label": "Full transparency",
-              onchange: function (e) { state.visibility = e.target.checked ? "full" : "neutral"; } }),
-            el("span", { class: "track" }), el("span", { class: "knob" })])
-        ]))
+          "Interpreted in the meeting timezone (" + U.tzAbbrev(state.tz) + ").", "round1DeadlineUtc")
       ]));
       wrap.appendChild(rule);
 
@@ -663,6 +655,23 @@
     var dowVeto = {}; // source of truth: weekday number (0-6) -> true = "never this day"
     var painted = {}; // source of truth: "YYYY-MM-DD" -> true = an absence day
     var vetoOpen = false; // whether the avoid-rules strip is expanded (survives rerender)
+    // Seed the editors from rules saved on an earlier visit. Every save REPLACES the
+    // whole set server-side, so an unseeded editor would silently wipe them.
+    function seedRules() {
+      dowVeto = {}; painted = {};
+      (you.constraints || []).forEach(function (c) {
+        if (c.type === "dow") dowVeto[c.value] = true;
+        else if (c.type === "range") {
+          var pr = String(c.value).split("/");
+          var lo = pr[0], hi = pr[1] || pr[0];
+          eachHorizonDate(poll.horizonStartUtc, poll.horizonEndUtc, poll.tz).forEach(function (d) {
+            if (d.key >= lo && d.key <= hi) painted[d.key] = true;
+          });
+        }
+      });
+      if (Object.keys(dowVeto).length || Object.keys(painted).length) vetoOpen = true;
+      syncVetoes();
+    }
 
     // Contiguous painted-date runs → one inclusive range each. Horizon dates are
     // consecutive, so index-adjacency is calendar-adjacency.
@@ -930,7 +939,7 @@
         dowRow,
         el("p", { class: "vseclbl", style: "margin-top:16px;" }, "Dates you’re away"),
         absenceCalendar().node,
-        el("p", { class: "vhint" }, "Private to you — only used if another time must be found.")
+        el("p", { class: "vhint" }, "Other invitees never see these. The organizer may, if another time has to be found.")
       ]);
       var strip = el("div", { class: "vetostrip" + (open ? " open" : "") });
       var hd = el("button", { type: "button", class: "vetohd", "aria-expanded": open ? "true" : "false" }, [
@@ -1023,16 +1032,18 @@
 
     async function doSave(btn, note, picker) {
       btn.disabled = true; btn.textContent = "Saving…";
+      // Always send the FULL current rule set — the server replaces, so an empty
+      // array genuinely clears previously saved avoid-rules.
       var constraints = Object.keys(vetoes).map(function (k) { return vetoes[k]; });
       try {
         // Every write returns a fresh getState-shaped payload; re-render from that
         // rather than a second round-trip, so the saved state reflects authority.
-        var fresh = await App.api.submitVotes(ctx.token, votes, constraints.length ? constraints : undefined);
+        var fresh = await App.api.submitVotes(ctx.token, votes, constraints);
         if (picker && picker._getPicks().length) {
           var afterBench = await App.api.proposeBench(ctx.token, picker._getPicks());
           if (afterBench) fresh = afterBench;
         }
-        if (fresh && fresh.poll) { data = fresh; poll = data.poll; you = data.you || {}; seedVotes(); }
+        if (fresh && fresh.poll) { data = fresh; poll = data.poll; you = data.you || {}; seedVotes(); seedRules(); }
         errBanner = [];
         saved = true; savedAt = Date.now();
         rerender();          // rebuilds with the disabled "Saved ✓" button
@@ -1046,6 +1057,7 @@
       }
     }
 
+    seedRules();
     rerender();
     U.mount(root);
   }
@@ -1068,17 +1080,23 @@
         var reasons = (s.reasons || []).map(function (r) { return r.text; });
         (byId[s.slotId] || []).forEach(function (d) { reasons.push(d.text); });
         var status = s.status || "alive";
+        // Diagnostic text carries participant names (setup input) — always textContent,
+        // never innerHTML, or a crafted name becomes stored XSS on the organizer page.
+        var reason = el("span", { class: "reason" });
+        if (reasons.length) reason.textContent = reasons.join(" · ");
+        else if (!s.support) reason.textContent = "Awaiting responses.";
+        else {
+          reason.appendChild(el("b", {}, String(s.support.works)));
+          reason.appendChild(document.createTextNode(
+            " works · " + s.support.ifneeded + " if needed · " + s.support.cant + " can’t."));
+        }
         return el("div", { class: "srow" }, [
           el("span", { class: "slotid" }, U.fmtDay(s.startUtc, poll.tz) + " " + U.fmtTime(s.startUtc, poll.tz)),
-          el("span", { class: "reason", html: reasons.length ? reasons.join(" · ") : coverageText(s) }),
+          reason,
           el("span", { class: "verdict " + status }, status)
         ]);
       }))
     ]);
-  }
-  function coverageText(s) {
-    if (!s.support) return "Awaiting responses.";
-    return "<b>" + s.support.works + "</b> works · " + s.support.ifneeded + " if needed · " + s.support.cant + " can’t.";
   }
 
   function coverageCard(org) {
@@ -1093,9 +1111,9 @@
     if (budget) {
       var pct = budget.total ? Math.min(100, Math.round(budget.used / budget.total * 100)) : 0;
       kids.push(el("div", { class: "budget" + (budget.squeezed ? " squeezed" : ""), style: "margin-top:16px;" }, [
-        el("div", { class: "blbl" }, [el("span", {}, "Email budget today"), el("span", {}, budget.used + " / " + budget.total)]),
+        el("div", { class: "blbl" }, [el("span", {}, "Scheduler mail sent today"), el("span", {}, budget.used + " / " + budget.total)]),
         el("div", { class: "bbar" }, el("i", { style: "width:" + pct + "%" })),
-        budget.squeezed ? el("p", { class: "bnote" }, "Budget squeezed — lowest-priority mail is being held back.") : null
+        budget.squeezed ? el("p", { class: "bnote" }, "Daily mail quota reached — low-priority mail is deferred, and dropped after repeated retries.") : null
       ]));
     }
     return el("div", { class: "card" }, el("div", { class: "cbody" }, kids));
@@ -1109,6 +1127,47 @@
     wrap.appendChild(el("div", { class: "card" }, el("div", { class: "cbody" },
       slotDiagnostics(poll, data.slots, org.diagnostics))));
     wrap.appendChild(coverageCard(org));
+
+    // REQUIRED_GRACE: a required person is silent — offer the levers the email promises.
+    if (org.grace) {
+      var graceKids = [
+        el("p", { class: "section-label" }, "Waiting on a required person"),
+        el("p", { class: "csub" }, "Still needed: " + (org.grace.silent || []).map(function (p) { return p.name; }).join(", ") +
+          (org.grace.untilUtc ? ". Grace runs until " + U.fmtDeadline(org.grace.untilUtc, poll.tz) + "." : "."))
+      ];
+      var extendBtn = el("button", { type: "button", class: "btn-ghost" }, "Extend 24 hours");
+      extendBtn.addEventListener("click", async function () {
+        extendBtn.disabled = true;
+        try { await App.api.extendGrace(ctx.token); await ctx.reload(); }
+        catch (e) { extendBtn.disabled = false; U.toast(e.message); }
+      });
+      var row = el("div", { class: "primaryrow" }, [extendBtn]);
+      (org.grace.silent || []).forEach(function (p) {
+        var demote = el("button", { type: "button", class: "btn-ghost" }, "Demote " + p.name + " to optional");
+        demote.addEventListener("click", async function () {
+          demote.disabled = true;
+          try { await App.api.demoteRequired(ctx.token, p.inviteeId); await ctx.reload(); }
+          catch (e) { demote.disabled = false; U.toast(e.message); }
+        });
+        row.appendChild(demote);
+      });
+      graceKids.push(row);
+      wrap.appendChild(el("div", { class: "card" }, el("div", { class: "cbody" }, graceKids)));
+    }
+
+    // BOOKING_FAILED: the failure email points here — offer the retry.
+    if (org.bookingFailed) {
+      var retryBtn = el("button", { type: "button", class: "btn-primary" }, "Retry booking");
+      retryBtn.addEventListener("click", async function () {
+        retryBtn.disabled = true; retryBtn.textContent = "Retrying…";
+        try { await App.api.retryBooking(ctx.token); await ctx.reload(); }
+        catch (e) { retryBtn.disabled = false; retryBtn.textContent = "Retry booking"; U.toast(e.message); }
+      });
+      wrap.appendChild(el("div", { class: "card" }, el("div", { class: "cbody" }, [
+        el("div", { class: "banner-info banner-err" }, "The calendar event couldn’t be created — nothing was booked."),
+        el("div", { class: "primaryrow", style: "margin-top:12px;" }, [retryBtn])
+      ])));
+    }
 
     var cancelBtn = el("button", { type: "button", class: "btn-danger" }, "Cancel poll");
     cancelBtn.addEventListener("click", async function () {
@@ -1158,7 +1217,7 @@
       var remaining = Math.max(0, pivot.dueUtc - Date.now());
       var hrs = Math.floor(remaining / 3600000), mins = Math.floor((remaining % 3600000) / 60000);
       cardBody.push(el("div", { class: "countdown" }, [
-        el("div", { class: "lbl" }, [el("span", {}, "Auto-launches with your Works answers if untouched"),
+        el("div", { class: "lbl" }, [el("span", {}, "Auto-launches with these Works answers unless you act"),
           el("span", { class: "rem" }, hrs + "h " + mins + "m left")]),
         el("div", { class: "cdbar" }, el("i", { style: "width:" + Math.min(100, remaining / (4 * 3600000) * 100) + "%" }))
       ]));
@@ -1220,9 +1279,13 @@
       el("div", { class: "banner-info banner-warn" }, esc.diagnosis || "No slot in the rescue slate can satisfy the success rule."),
       el("p", { class: "section-label", style: "margin-top:16px;" }, "Your options"),
       el("div", { class: "levers" }, (esc.levers || []).map(function (lv) {
-        var btn = el("button", { type: "button", class: /cancel/i.test(lv.id) ? "btn-danger" : "btn-ghost" }, lv.label);
+        var isCancel = lv.id === "cancel";
+        var btn = el("button", { type: "button", class: isCancel ? "btn-danger" : "btn-ghost" },
+          isCancel ? "Cancel poll" : "Book anyway");
         btn.addEventListener("click", function () { runLever(lv, btn); });
-        return el("div", { class: "lever" }, [el("span", { class: "llbl" }, lv.label), btn]);
+        return el("div", { class: "lever" }, [
+          el("span", { class: "llbl" }, [lv.label, lv.detail ? el("span", { class: "hint", style: "display:block;" }, lv.detail) : null]),
+          btn]);
       }))
     ])));
     wrap.appendChild(el("p", { class: "footer-note" }, "No automatic round 3 — every path out is an explicit organizer choice"));
@@ -1231,12 +1294,9 @@
     async function runLever(lv, btn) {
       btn.disabled = true;
       try {
-        var id = lv.id || "";
-        if (/cancel/i.test(id)) await App.api.cancelPoll(ctx.token);
-        else if (/extend|grace/i.test(id)) await App.api.extendGrace(ctx.token);
-        else if (/book|least/i.test(id)) await App.api.organizerApprove(ctx.token);
-        else if (/retry/i.test(id)) await App.api.retryBooking(ctx.token);
-        else { await App.api.call(id, { token: ctx.token }); } // backend-defined lever
+        if (lv.id === "cancel") await App.api.cancelPoll(ctx.token);
+        else if (lv.slotId) await App.api.organizerApprove(ctx.token, lv.slotId);
+        else throw new Error("Unknown action.");
         await ctx.reload();
       } catch (e) { btn.disabled = false; U.toast(e.message); }
     }

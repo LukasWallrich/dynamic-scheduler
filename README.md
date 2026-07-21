@@ -95,8 +95,8 @@ organizer.
    then `clasp push`.
 3. In the Apps Script editor: **Deploy → New deployment → Web app**, execute as *me*,
    access *Anyone*. Authorize the scopes (Sheets, Calendar, Gmail, triggers).
-4. Run `installTrigger` once from the editor (hourly cron: reminders, deadlines,
-   auto-book).
+4. Run `bootstrap()` once from the editor — it installs the hourly cron (reminders,
+   deadlines, auto-book) and prints your setup URL.
 5. Host the frontend: publish this repo to GitHub Pages (or copy `frontend/` + `core/`
    to any static host) and set `API_BASE` in `frontend/api.js` to your `/exec` URL.
 6. Open `<frontend-url>?setup=<SETUP_TOKEN>` to create your first poll. The token is

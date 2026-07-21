@@ -104,7 +104,15 @@ function materializeRescueSlate(snapshot, now) {
 
   var freeWindows = safe(function () { return Cal.freeWindows(poll); }, []);
   var rescue = safe(function () { return Sched.pivot.rescueSlate(snapshot, freeWindows, now); }, null);
-  if (!rescue || !rescue.slots || !rescue.slots.length) return false;
+  if (!rescue || !rescue.slots || !rescue.slots.length) {
+    // No feasible rescue candidate exists. Escalate NOW — the engine no-ops on
+    // PIVOT_PENDING while the slate-2 set is empty, so returning false here would
+    // strand the poll in PIVOT_PENDING forever. The reloaded advance loop then emits
+    // SEND_ESCALATE idempotently from the ESCALATE state.
+    Store.updatePoll(poll.pollId, { state: 'ESCALATE' }, poll.rev);
+    Store.appendAudit(poll.pollId, 'rescue_empty', {});
+    return true;
+  }
 
   var slotPatches = [];
   var newSlots = [];
@@ -152,9 +160,13 @@ function applyAction(snapshot, action) {
   switch (action.kind) {
     case 'votes':
       Store.appendVotes(pollId, action.inviteeId, action.votes);
+      // Constraints ride along in the SAME locked transition: a save whose all-Can't
+      // votes doom the slate must have its avoid-rules stored before the pivot's
+      // rescue slate is scored, or the rescue ignores what the person just reported.
+      if (action.constraints) Store.replaceConstraints(pollId, action.inviteeId, action.constraints);
       break;
     case 'constraints':
-      Store.appendConstraints(pollId, action.inviteeId, action.constraints);
+      Store.replaceConstraints(pollId, action.inviteeId, action.constraints);
       break;
     case 'bench':
       var benchSlots = action.slots.map(function (s, idx) {
@@ -178,6 +190,14 @@ function applyAction(snapshot, action) {
       // Can't so the pure core marks the slot Blocked without calendar access.
       Store.appendVotes(pollId, action.inviteeId, [{
         slotId: action.slotId, answer: 'cant', provenance: 'prefill'
+      }]);
+      break;
+    case 'calendarFree':
+      // The slot is free again after a synthetic block: reverse it with a newer
+      // prefill Works (applyCalendarRechecks only emits this when the standing Can't
+      // was itself a prefill — never over an explicit organizer answer).
+      Store.appendVotes(pollId, action.inviteeId, [{
+        slotId: action.slotId, answer: 'works', provenance: 'prefill'
       }]);
       break;
     case 'demoteRequired':
@@ -524,9 +544,15 @@ function applyCalendarRechecks(pollId) {
   var latest = safe(function () { return Sched.votes.latest(snapshot); }, new Map());
   Sched.engine.liveSlots(snapshot).forEach(function (s) {
     var existing = latest.get ? latest.get(organizer.inviteeId + '|' + s.slotId) : null;
-    if (existing && existing.answer === 'cant') return; // already blocked
-    if (!safe(function () { return Cal.isSlotFree(snapshot.poll, s); }, true)) {
+    var free = safe(function () { return Cal.isSlotFree(snapshot.poll, s); }, true);
+    if (!free) {
+      if (existing && existing.answer === 'cant') return; // already blocked
       advancePoll(pollId, { kind: 'calendarBusy', inviteeId: organizer.inviteeId, slotId: s.slotId });
+    } else if (existing && existing.answer === 'cant' && existing.provenance === 'prefill') {
+      // The conflicting event moved/vanished: reverse the SYNTHETIC block with a fresh
+      // prefill Works so a valid slot isn't dead forever. Explicit organizer Can'ts
+      // (explicit_slate provenance, e.g. a hold rejection) are never overridden.
+      advancePoll(pollId, { kind: 'calendarFree', inviteeId: organizer.inviteeId, slotId: s.slotId });
     }
   });
 }

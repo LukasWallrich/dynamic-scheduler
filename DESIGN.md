@@ -108,8 +108,10 @@ any state → CANCELLED (organizer).
 1. **SETUP** (organizer, ~1 min): duration, invitees (+ required flags — organizer-
    private by default: invitee-facing pages never label anyone required or ordinary,
    so nobody reads their own or others' weighting off the poll), success rule,
-   horizon, 2–8 slots (3–5 recommended), per-poll visibility toggle (neutral status [default] vs. full
-   Doodle-style transparency), response deadline. Warn if the proposed slots lack
+   horizon, 2–8 slots (3–5 recommended), response deadline. (A per-poll full-transparency
+   mode is specced below but NOT implemented in v1 — every poll is neutral, and the
+   setup form offers no toggle until the backend actually serves names.) Warn if the
+   proposed slots lack
    diversity (all same day / same time band). Plain-language preview of the social
    contract ("If none of these can reach N people, we'll propose up to 3 alternatives;
    decision by Tue 3pm."). Organizer profile (reused across polls): working hours,
@@ -238,11 +240,12 @@ out of required-silence is an explicit organizer choice with a default nudge.
 
 The web app executes as the deployer (so invitees need no Google login), which means
 every request runs with the organizer's authority — authorization is therefore strictly
-server-side per token. High-entropy random tokens; only hashes stored. GET renders
-pages; every mutation is a POST with a per-session nonce. No state-changing links in
-emails (mail scanners follow GETs) — email buttons land on confirmation pages.
-`Cache-Control: no-store`, no third-party assets, referrer suppressed. Possession of a
-link = acting as that invitee; tokens are rotatable/revocable by the organizer.
+server-side per token. High-entropy random tokens; only hashes stored. Every mutation is
+a POST carrying the bearer token (no ambient credentials, no cookies; v1 has no
+per-request nonce — possession of the token is the authorization). No state-changing
+links in emails (mail scanners follow GETs) — email buttons land on confirmation pages.
+No third-party assets, referrer suppressed. Possession of a link = acting as that
+invitee; tokens are rotatable/revocable by the organizer.
 
 ## Timezones
 
@@ -257,9 +260,10 @@ transition in the event timezone (lifted once tested).
 - **One persistent personal page per invitee** that always renders their current task:
   slate 1 → saved → bench slots → slate 2 → final details. Revisable until booking
   (carried bench votes are revisable until the round-2 deadline).
-- **Visibility** is a per-poll organizer toggle; neutral is the default ("all slots
-  still in contention", anonymous counts). Full transparency shows names + answers and
-  is flagged to invitees before they respond.
+- **Visibility** is specced as a per-poll organizer toggle; neutral is the default
+  ("all slots still in contention", anonymous counts). Full transparency would show
+  names + answers, flagged to invitees before they respond — **not implemented in v1**
+  (the API never returns other invitees' names to invitees, and setup offers no toggle).
 - **Explain consequence, not algorithm**: invitees see "if none work, we'll ask for a
   bit more". Organizer diagnostics are fully specific: they name the rule that failed
   *and* the people whose votes or vetoes block a slot — the organizer needs to know who

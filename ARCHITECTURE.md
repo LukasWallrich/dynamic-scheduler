@@ -131,21 +131,23 @@ guard, checked before every send/create), `audit` (append-only event log).
   the lock to re-verify state and feasibility immediately before creating, and a
   crashed `executing` CREATE_EVENT is reconciled on the next tick by searching the
   calendar for the event before re-creating. Server-side validation lives here too:
-  setup shape (2–3 slots, sane rule numbers, valid emails, deadline inside horizon),
+  setup shape (2–8 slots, membership in the recomputed candidate-start set, sane rule
+  numbers, valid emails, deadline inside horizon),
   bench proposals only in ROUND1 from an all-Can't proposer and only from the offered
   candidate set, organizer decisions only in the state that shows them and only for
   the slot they target.
-- `doGet` — routes by token: invitee page, organizer dashboard / pivot / hold /
-  escalate pages, setup form, closed page. `Cache-Control: no-store`; GETs are strictly
-  read-only — they render from the snapshot (including display-only calendar rechecks
-  and deadline-aware rendering) and never call `advancePoll`; transitions happen on
-  POSTs and cron ticks only.
-- `doPost` — nonce-checked mutations; deadlines re-evaluated server-side at receipt.
+- `doGet` — a health probe only; all reads AND writes arrive as POST (the CORS
+  simple-request transport). Reads (`getState`, `getSetupContext`) render from the
+  snapshot and never call `advancePoll`; transitions happen on write POSTs and cron
+  ticks only.
+- `doPost` — bearer-token mutations (possession of the high-entropy token IS the
+  authorization; there is no per-request nonce); deadlines re-evaluated server-side
+  at receipt.
 - Tokens: 128-bit random; the Sheet stores only SHA-256 hashes. Raw tokens (needed to
   rebuild links for reminder emails) live in Script Properties, keyed per poll — never
-  in the Sheet. Possession = identity. Nonces are per-render, multi-valid, consumed on
-  use. Idempotency keys for effects that can legitimately fire again (e.g. HOLD
-  approval after a cancelled hold) include the arming timestamp.
+  in the Sheet. Possession = identity. Idempotency keys for effects that can
+  legitimately fire again (e.g. HOLD approval after a cancelled hold) include the
+  arming timestamp.
 - Calendar: free/busy per the blocking policy (Busy blocks; declined/free/
   working-location don't; all-day only if Busy). Live recheck at render, vote, HOLD,
   approval, booking.

@@ -79,7 +79,7 @@
     },
     submitVotes: function (token, votes, constraints) {
       var p = { token: token, votes: votes };
-      if (constraints) p.constraints = constraints;
+      if (constraints) p.constraints = constraints; // full set; [] clears saved rules
       return call("submitVotes", p);
     },
     saveConstraints: function (token, constraints) { return call("saveConstraints", { token: token, constraints: constraints }); },
