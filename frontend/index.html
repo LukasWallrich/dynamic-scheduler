@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Scheduler</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell" id="app">
+    <div class="loading">Loading…</div>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Mock backend: only intercepts fetch when the URL carries ?mock=1 -->
+  <script src="mock-api.js"></script>
+
+  <!--
+    Shared scheduling core (window.Sched) for instant client-side feasibility preview.
+    Loaded from ../core when hosted inside the repo. If absent (app hosted standalone
+    without core copied alongside), the preview quietly disables — the server stays
+    authoritative regardless. See README.md.
+  -->
+  <script src="../core/universe.js" onerror="window.__noCore=1"></script>
+  <script src="../core/votes.js" onerror="window.__noCore=1"></script>
+  <script src="../core/constraints.js" onerror="window.__noCore=1"></script>
+  <script src="../core/engine.js" onerror="window.__noCore=1"></script>
+
+  <!-- App -->
+  <script src="api.js"></script>
+  <script src="ui.js"></script>
+  <script src="views.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
