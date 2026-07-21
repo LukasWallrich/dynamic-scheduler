@@ -558,7 +558,7 @@
           field("Pivot delay (h)", U.stepper(state.pivotDelayHours, 0, 48, function (v) { state.pivotDelayHours = v; }), "Working hours before a rescue slate auto-launches.")
         ]),
         field("Response deadline", el("input", { type: "datetime-local",
-          value: state.round1DeadlineUtc ? new Date(state.round1DeadlineUtc - tzOffset(state.round1DeadlineUtc, state.tz)).toISOString().slice(0, 16) : "",
+          value: state.round1DeadlineUtc ? new Date(state.round1DeadlineUtc + tzOffset(state.round1DeadlineUtc, state.tz)).toISOString().slice(0, 16) : "",
           onchange: function (e) { state.round1DeadlineUtc = e.target.value ? localToUtc(e.target.value, state.tz) : null; refreshContract(); } }),
           "Interpreted in the meeting timezone (" + U.tzAbbrev(state.tz) + ").", "round1DeadlineUtc"),
         el("div", { class: "field" }, el("div", { class: "toggle-row" }, [

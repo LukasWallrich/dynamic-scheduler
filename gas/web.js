@@ -381,9 +381,11 @@ function handleCreatePoll(body) {
   if (errors.length) return jsonErr('bad_request', 'Please fix the highlighted fields.', errors);
 
   var pollId = 'poll_' + Utilities.getUuid().slice(0, 8);
+  var organizerName = String(poll.organizerName || '').trim() ||
+    (organizerEmail ? organizerEmail.split('@')[0] : 'the organizer');
   var pollRow = {
     pollId: pollId, rev: 0, state: 'SETUP', title: poll.title, durationMins: dur, tz: tz,
-    organizerEmail: organizerEmail, organizerName: poll.organizerName,
+    organizerEmail: organizerEmail, organizerName: organizerName,
     horizonStartUtc: horizonStartUtc, horizonEndUtc: horizonEndUtc,
     whStartHour: Number(wh.startHour), whEndHour: Number(wh.endHour), whDays: whDays.join(','),
     visibility: poll.visibility === 'full' ? 'full' : 'neutral',
@@ -404,7 +406,7 @@ function handleCreatePoll(body) {
     tokens[id] = token;
     invitees.push(inviteeRow(pollId, id, name, email, required, organizer, token));
   };
-  addInvitee('inv_org', poll.organizerName, organizerEmail, true, true);
+  addInvitee('inv_org', organizerName, organizerEmail, true, true);
   inviteeLines.forEach(function (line, idx) {
     addInvitee('inv_' + idx, line.name, line.email, line.required, false);
   });
