@@ -55,6 +55,42 @@ contract in **API.md**. README.md now carries a screenshot walkthrough from a re
 Also: full lean-copy pass across `frontend/views.js`, `core/text.js` emails, and
 DESIGN.md's quoted veto-strip label (test updated to match).
 
+## Codex production-readiness review (2026-07-21): implemented
+
+A read-only codex review was run and its concrete findings implemented (deployed @18,
+56 tests green, key paths re-verified live):
+
+- **Atomic avoid-rules**: `submitVotes` now stores votes + the FULL constraint set in
+  one locked transition; constraint saves REPLACE the invitee's set (`[]` clears), the
+  API returns `you.constraints`, and the invitee page seeds its editors from it.
+  Verified live incl. the Sheets `deleteRow` path.
+- **Empty rescue universe → ESCALATE** (was: stuck in PIVOT_PENDING forever).
+- **Escalate levers are real**: typed `{id:'book:<slotId>'|'cancel', slotId, label,
+  detail}`; frontend executes them via `organizerApprove(slotId)` / `cancelPoll`.
+- **REQUIRED_GRACE / BOOKING_FAILED dashboards**: extend / per-person demote / retry
+  controls now exist (the emails promised them; the pages now deliver).
+- **Synthetic calendar blocks reverse**: a prefill-Can't from a busy recheck is undone
+  by a prefill-Works when the calendar frees up; explicit organizer Can'ts never are.
+- **createPoll re-validates slots** against the server-recomputed candidate set
+  (dedupe + reject stale/crafted times) — skipped gracefully if the calendar read fails.
+- **Stored-XSS hardening**: organizer diagnostics render via textContent.
+- Coverage lists all invitees; deadline boundary unified (`>=`); round-2 reminder
+  midpoint uses actual launch time; `organizerEmail` in the view-model (closed-page
+  contact card works); unimplemented full-transparency toggle removed from setup;
+  copy + DESIGN/ARCHITECTURE/API docs aligned with the code.
+
+**Deferred from the review** (documented, deliberate):
+
+- Avoid-rules are interpreted in the POLL timezone, not the invitee's (no invitee tz
+  stored). Only matters across midnight boundaries for far-flung invitees.
+- Full-transparency mode is specced but unimplemented (and no longer advertised).
+- Setup token: permanent bearer credential — no rotation/expiry/rate limit yet.
+- Ops hardening backlog: outbox batch cap per request, email-budget counter race,
+  retry/backoff for failed high-priority mail, cron full-table scans (6-min limit risk
+  with many active polls), non-transactional createPoll, crash window between state
+  commit and its votes/effects, bench-membership TOCTOU recheck under the lock,
+  `rotateToken` outside the writer lock, richer failure surfacing on the dashboard.
+
 ## Open items
 
 1. **Store self-heal is still a v1 shortcut.** `gas/store.js` `sheet()` repaves a tab
